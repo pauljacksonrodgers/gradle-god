@@ -1,0 +1,123 @@
+#!/bin/bash
+
+# TODO extend functionality not working
+# Display usage information
+usage() {
+    echo "Usage: gg [--extend] [/path/to/directory]"
+    echo "       gg --help"
+    echo
+    echo "Options:"
+    echo "  --extend        Include tests for files importing changed files."
+    echo "  /path/to/dir    Specify the directory to run tests in (default: current directory)."
+    echo "  --help          Display this help message and exit."
+}
+
+# Parse command-line arguments
+extend=false
+directory="."
+for arg in "$@"; do
+    case $arg in
+        --extend)
+        extend=true
+        shift # Remove --extend from processing
+        ;;
+        --help)
+        usage
+        exit 0
+        ;;
+        -*)
+        echo "Unknown option: $arg"
+        usage
+        exit 1
+        ;;
+        *)
+        directory="$arg"
+        shift # Remove directory path from processing
+        ;;
+    esac
+done
+
+# Change to the specified directory, if provided
+if [ ! -d "$directory" ]; then
+    echo "The specified directory does not exist: $directory"
+    exit 1
+fi
+cd "$directory" || exit
+
+gg() {
+    echo 'Starting test selection process...'
+
+    # Collect changed .kt files, excluding deletions and filtering out integration tests
+    declare -a changed_files=()
+    declare -a test_files=()
+
+
+    while IFS= read -r line; do
+        changed_files+=("$line")
+    done < <(git diff --name-only --diff-filter=d main $(git branch --show-current) | grep '\.kt$' | grep -v 'src/integration')
+
+    echo "Found changed files: ${#changed_files[@]}"
+
+    declare -a test_files=()
+    for file in "${changed_files[@]}"; do
+        if [[ "$file" =~ Test\.kt$ ]] && [[ -f "$file" ]]; then
+            test_files+=("$file")
+        elif [[ -f "$file" ]]; then
+            local pattern="$(basename "$file" .kt)Test.kt"
+            while IFS= read -r -d $'\0' test; do
+                test_files+=("$test")
+            done < <(find src/test/kotlin -type f -name "$pattern" -print0)
+        fi
+    done
+
+    echo "Directly identified test files: ${#test_files[@]}"
+
+    if [[ "$extend" = true ]]; then
+            echo 'Extending to include tests for files importing changed files...'
+            # Assuming package and class extraction works correctly, loop through changed_files
+            for file in "${changed_files[@]}"; do
+                package=$(grep -m 1 '^package' "$file" | awk '{print $2}' | tr -d ';')
+                class=$(basename "$file" .kt)
+                import_line="import $package.$class"
+
+                while IFS= read -r -d $'\0' importing_file; do
+                    # Check if importing_file is a test or find its associated test file
+                    if [[ "$importing_file" =~ Test\.kt$ ]] && [[ -f "$importing_file" ]]; then
+                        test_files+=("$importing_file")
+                    else
+                        local associated_test="${importing_file/%.kt/Test.kt}"
+                        if [[ -f "$associated_test" ]]; then
+                            test_files+=("$associated_test")
+                        fi
+                    fi
+                done < <(grep -rlZ "$import_line" src/main/kotlin src/test/kotlin --exclude-dir='src/integration' --include='*.kt')
+            done
+            echo "Included tests from files importing changed files."
+        fi
+
+    echo 'Finding fully qualified class names...'
+    declare -a fully_qualified_names=()
+    for test_file in "${test_files[@]}"; do
+        local package_name=$(grep '^package ' "$test_file" | head -n 1 | awk '{print $2}' | tr -d ';')
+        local class_name=$(basename "$test_file" .kt)
+        if [[ -n "$package_name" && -n "$class_name" ]]; then
+            fully_qualified_names+=("$package_name.$class_name")
+        fi
+    done
+
+    echo "Total tests to run: ${#fully_qualified_names[@]}"
+    echo "Tests: ${fully_qualified_names[*]}"
+    if [[ ${#fully_qualified_names[@]} -gt 0 ]]; then
+        gradle_command="./gradlew test"
+        for test_class in "${fully_qualified_names[@]}"; do
+            gradle_command+=" --tests $test_class"
+        done
+        eval "$gradle_command"
+    else
+        echo "No tests to run."
+    fi
+}
+
+# Execute the gg function with parsed options
+gg
+
