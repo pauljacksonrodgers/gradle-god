@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# TODO extend functionality not working
-# Display usage information
 usage() {
     echo "Usage: gg [--extend] [/path/to/directory]"
     echo "       gg --help"
@@ -12,14 +10,13 @@ usage() {
     echo "  --help          Display this help message and exit."
 }
 
-# Parse command-line arguments
 extend=false
 directory="."
 for arg in "$@"; do
     case $arg in
         --extend)
         extend=true
-        shift # Remove --extend from processing
+        shift
         ;;
         --help)
         usage
@@ -32,22 +29,20 @@ for arg in "$@"; do
         ;;
         *)
         directory="$arg"
-        shift # Remove directory path from processing
+        shift
         ;;
     esac
 done
 
-# Change to the specified directory, if provided
 if [ ! -d "$directory" ]; then
     echo "The specified directory does not exist: $directory"
     exit 1
 fi
 cd "$directory" || exit
 
-gg() {
+gwatch() {
     echo 'Starting test selection process...'
 
-    # Collect changed .kt files, excluding deletions and filtering out integration tests
     declare -a changed_files=()
     declare -a test_files=()
 
@@ -74,23 +69,23 @@ gg() {
 
     if [[ "$extend" = true ]]; then
             echo 'Extending to include tests for files importing changed files...'
-            # Assuming package and class extraction works correctly, loop through changed_files
             for file in "${changed_files[@]}"; do
                 package=$(grep -m 1 '^package' "$file" | awk '{print $2}' | tr -d ';')
                 class=$(basename "$file" .kt)
                 import_line="import $package.$class"
 
-                while IFS= read -r -d $'\0' importing_file; do
-                    # Check if importing_file is a test or find its associated test file
-                    if [[ "$importing_file" =~ Test\.kt$ ]] && [[ -f "$importing_file" ]]; then
-                        test_files+=("$importing_file")
-                    else
-                        local associated_test="${importing_file/%.kt/Test.kt}"
-                        if [[ -f "$associated_test" ]]; then
-                            test_files+=("$associated_test")
-                        fi
-                    fi
-                done < <(grep -rlZ "$import_line" src/main/kotlin src/test/kotlin --exclude-dir='src/integration' --include='*.kt')
+                importing_files=$(grep -rlZ "$import_line" src/main/kotlin src/test/kotlin --exclude-dir='src/integration' --include='*.kt')
+
+                for importing_file in $importing_files; do
+                  if [[ "importing_file" =~ Test\.kt$ ]] && [[ -f "$importing_file" ]]; then
+                      test_files+=("$file")
+                  elif [[ -f "$file" ]]; then
+                      local pattern="$(basename "$importing_file" .kt)Test.kt"
+                      while IFS= read -r -d $'\0' test; do
+                          test_files+=("$test")
+                      done < <(find src/test/kotlin -type f -name "$pattern" -print0)
+                  fi
+                done
             done
             echo "Included tests from files importing changed files."
         fi
@@ -118,6 +113,5 @@ gg() {
     fi
 }
 
-# Execute the gg function with parsed options
-gg
+gwatch
 
