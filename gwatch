@@ -43,7 +43,7 @@ change_directory() {
 identify_changed_files() {
     while IFS= read -r line; do
         changed_files+=("$line")
-    done < <(git diff --name-only --diff-filter=d main $(git branch --show-current) | grep '\.kt$' | grep -v 'src/integration')
+    done < <(git diff --name-only main | grep '\.kt$' | grep -v 'src/integration')
     echo "Found changed files: ${#changed_files[@]}"
 }
 
