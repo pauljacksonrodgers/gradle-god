@@ -1,11 +1,14 @@
-# Gwatch - Gradle Test File Watcher
+# Gwatch - Gradle Continuous Build File Watcher (for Kotlin)
 
-GG (Gradle God) is a CLI tool designed to streamline the process of running tests in Gradle-based projects. It identifies and runs tests affected by changes in your codebase, enhancing the development workflow by making test execution more efficient.
+Gwatch is a CLI tool that identifies and continuously runs unit tests affected by changes in your codebase.
 
 ## Features
 
-- **Selective Test Execution**: Automatically detects and runs only the tests affected by recent code changes.
-- **Extendable**: Offers an `--extend` option to include tests for files importing changed files, broadening the test coverage to affected areas.
+- **Selective Test Execution**: Automatically detects and runs tests that have changed, or tests for files that have
+changed, relative to the `main` branch.
+- **Extendable**: Offers an `--extend` option to include tests for files importing changed files, broadening the test 
+ coverage. I.e., if you have changed `Thing.kt`, and `OtherThing.kt` imports `Thing.kt`, then `OtherThingTest.kt` will
+ also be watched.
 - **Flexible**: Allows specifying a directory to run tests in a different directory than the current one.
 
 ## Getting Started
@@ -18,9 +21,42 @@ GG (Gradle God) is a CLI tool designed to streamline the process of running test
 
 ### Installation
 
-To install GG, follow these steps:
+To install Gwatch, download the `gwatch` script from this repository and move it somewhere in your path, like 
+`/usr/local/bin/`.
 
-1. Download the `gg.sh` script from this repository.
-2. Make the script executable:
-   ```bash
-   chmod +x gg.sh
+### Usage
+
+Run Gwatch in the root directory of your Gradle project:
+
+```bash
+gwatch
+```
+
+To include tests for files importing changed files, use the `--extend` option:
+
+```bash
+gwatch --extend
+```
+
+To run Gwatch in a specific directory:
+
+```gwatch
+gwatch /path/to/project
+```
+
+Or combine both options:
+
+```bash
+gwatch --extend /path/to/project
+```
+
+For help and options:
+
+```bash
+gwatch --help
+```
+
+
+
+
+
