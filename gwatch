@@ -10,50 +10,44 @@ usage() {
     echo "  --help          Display this help message and exit."
 }
 
-extend=false
-directory="."
-for arg in "$@"; do
-    case $arg in
-        --extend)
-        extend=true
-        shift
-        ;;
-        --help)
-        usage
-        exit 0
-        ;;
-        -*)
-        echo "Unknown option: $arg"
-        usage
+parse_arguments() {
+    for arg in "$@"; do
+        case $arg in
+            --extend)
+            extend=true
+            ;;
+            --help)
+            usage
+            exit 0
+            ;;
+            -*)
+            echo "Unknown option: $arg"
+            usage
+            exit 1
+            ;;
+            *)
+            directory="$arg"
+            ;;
+        esac
+    done
+}
+
+change_directory() {
+    if [ ! -d "$directory" ]; then
+        echo "The specified directory does not exist: $directory"
         exit 1
-        ;;
-        *)
-        directory="$arg"
-        shift
-        ;;
-    esac
-done
+    fi
+    cd "$directory" || exit
+}
 
-if [ ! -d "$directory" ]; then
-    echo "The specified directory does not exist: $directory"
-    exit 1
-fi
-cd "$directory" || exit
-
-gwatch() {
-    echo 'Starting test selection process...'
-
-    declare -a changed_files=()
-    declare -a test_files=()
-
-
+identify_changed_files() {
     while IFS= read -r line; do
         changed_files+=("$line")
     done < <(git diff --name-only --diff-filter=d main $(git branch --show-current) | grep '\.kt$' | grep -v 'src/integration')
-
     echo "Found changed files: ${#changed_files[@]}"
+}
 
-    declare -a test_files=()
+identify_test_files() {
     for file in "${changed_files[@]}"; do
         if [[ "$file" =~ Test\.kt$ ]] && [[ -f "$file" ]]; then
             test_files+=("$file")
@@ -64,34 +58,36 @@ gwatch() {
             done < <(find src/test/kotlin -type f -name "$pattern" -print0)
         fi
     done
-
     echo "Directly identified test files: ${#test_files[@]}"
+}
 
+extend_logic() {
     if [[ "$extend" = true ]]; then
-            echo 'Extending to include tests for files importing changed files...'
-            for file in "${changed_files[@]}"; do
-                package=$(grep -m 1 '^package' "$file" | awk '{print $2}' | tr -d ';')
-                class=$(basename "$file" .kt)
-                import_line="import $package.$class"
+        echo 'Extending to include tests for files importing changed files...'
+        for file in "${changed_files[@]}"; do
+            package=$(grep -m 1 '^package' "$file" | awk '{print $2}' | tr -d ';')
+            class=$(basename "$file" .kt)
+            import_line="import $package.$class"
 
-                importing_files=$(grep -rlZ "$import_line" src/main/kotlin src/test/kotlin --exclude-dir='src/integration' --include='*.kt')
+            importing_files=$(grep -rlZ "$import_line" src/main/kotlin src/test/kotlin --exclude-dir='src/integration' --include='*.kt')
 
-                for importing_file in $importing_files; do
-                  if [[ "importing_file" =~ Test\.kt$ ]] && [[ -f "$importing_file" ]]; then
-                      test_files+=("$file")
-                  elif [[ -f "$file" ]]; then
-                      local pattern="$(basename "$importing_file" .kt)Test.kt"
-                      while IFS= read -r -d $'\0' test; do
-                          test_files+=("$test")
-                      done < <(find src/test/kotlin -type f -name "$pattern" -print0)
-                  fi
-                done
+            for importing_file in $importing_files; do
+              if [[ "importing_file" =~ Test\.kt$ ]] && [[ -f "$importing_file" ]]; then
+                  test_files+=("$file")
+              elif [[ -f "$file" ]]; then
+                  local pattern="$(basename "$importing_file" .kt)Test.kt"
+                  while IFS= read -r -d $'\0' test; do
+                      test_files+=("$test")
+                  done < <(find src/test/kotlin -type f -name "$pattern" -print0)
+              fi
             done
-            echo "Included tests from files importing changed files."
-        fi
+        done
+        echo "Included tests from files importing changed files."
+    fi
+}
 
+execute_gradle_command() {
     echo 'Finding fully qualified class names...'
-    declare -a fully_qualified_names=()
     for test_file in "${test_files[@]}"; do
         local package_name=$(grep '^package ' "$test_file" | head -n 1 | awk '{print $2}' | tr -d ';')
         local class_name=$(basename "$test_file" .kt)
@@ -99,11 +95,10 @@ gwatch() {
             fully_qualified_names+=("$package_name.$class_name")
         fi
     done
-
     echo "Total tests to run: ${#fully_qualified_names[@]}"
     echo "Tests: ${fully_qualified_names[*]}"
     if [[ ${#fully_qualified_names[@]} -gt 0 ]]; then
-        gradle_command="./gradlew test"
+        gradle_command="./gradlew -t test"
         for test_class in "${fully_qualified_names[@]}"; do
             gradle_command+=" --tests $test_class"
         done
@@ -113,5 +108,16 @@ gwatch() {
     fi
 }
 
-gwatch
+# Main logic
+extend=false
+directory="."
+declare -a changed_files=()
+declare -a test_files=()
+declare -a fully_qualified_names=()
 
+parse_arguments "$@"
+change_directory
+identify_changed_files
+identify_test_files
+extend_logic
+execute_gradle_command
