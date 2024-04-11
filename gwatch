@@ -98,7 +98,7 @@ execute_gradle_command() {
     echo "Total tests to run: ${#fully_qualified_names[@]}"
     echo "Tests: ${fully_qualified_names[*]}"
     if [[ ${#fully_qualified_names[@]} -gt 0 ]]; then
-        gradle_command="./gradlew -t test"
+        gradle_command="./gradlew test"
         for test_class in "${fully_qualified_names[@]}"; do
             gradle_command+=" --tests $test_class"
         done
