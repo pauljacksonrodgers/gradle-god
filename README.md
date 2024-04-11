@@ -1,4 +1,4 @@
-# Gwatch - Gradle Continuous Build File Watcher (for Kotlin)
+# Gwatch - Gradle Intelligent Test Runner (for Kotlin)
 
 Gwatch is a CLI tool that identifies and continuously runs unit tests affected by changes in your codebase.
 
